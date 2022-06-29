@@ -3,7 +3,6 @@
 
 from logger import setup_logger
 from model import BiSeNet
-from segmentation_models_pytorch import Unet, DeepLabV3Plus
 from face_dataset import FaceMask
 from loss import OhemCELoss
 from evaluate import evaluate
@@ -24,7 +23,6 @@ import time
 import datetime
 import argparse
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # for Windows
 
 respth = './res'
 if not osp.exists(respth):
@@ -44,44 +42,42 @@ def parse_args():
 
 
 def train():
-    # args = parse_args()
-    # torch.cuda.set_device(args.local_rank)
-    # dist.init_process_group(
-    #             backend = 'nccl',
-    #             init_method = 'tcp://127.0.0.1:33241',
-    #             world_size = torch.cuda.device_count(),
-    #             rank=args.local_rank
-    #             )
+    args = parse_args()
+    torch.cuda.set_device(args.local_rank)
+    dist.init_process_group(
+                backend = 'nccl',
+                init_method = 'tcp://127.0.0.1:33241',
+                world_size = torch.cuda.device_count(),
+                rank=args.local_rank
+                )
     setup_logger(respth)
 
     # dataset
     n_classes = 19
     n_img_per_gpu = 16
-    n_workers = 3
+    n_workers = 8
     cropsize = [448, 448]
-    data_root = R'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ'  # CelebAMask-HQ-img, mask 폴더가 있는 디렉토리
+    data_root = R'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ'
 
     ds = FaceMask(data_root, cropsize=cropsize, mode='train')
-    # sampler = torch.utils.data.distributed.DistributedSampler(ds)
+    sampler = torch.utils.data.distributed.DistributedSampler(ds)
     dl = DataLoader(ds,
                     batch_size = n_img_per_gpu,
                     shuffle = False,
-                    # sampler = sampler,
+                    sampler = sampler,
                     num_workers = n_workers,
                     pin_memory = True,
                     drop_last = True)
 
     # model
     ignore_idx = -100
-    # net = BiSeNet(n_classes=n_classes)
-    # net = Unet(classes=n_classes)
-    net = DeepLabV3Plus(classes=n_classes)
-    # net.cuda()
+    net = BiSeNet(n_classes=n_classes)
+    net.cuda()
     net.train()
-    # net = nn.parallel.DistributedDataParallel(net,
-    #         device_ids = [args.local_rank, ],
-    #         output_device = args.local_rank
-    #         )
+    net = nn.parallel.DistributedDataParallel(net,
+            device_ids = [args.local_rank, ],
+            output_device = args.local_rank
+            )
     score_thres = 0.7
     n_min = n_img_per_gpu * cropsize[0] * cropsize[1]//16
     LossP = OhemCELoss(thresh=score_thres, n_min=n_min, ignore_lb=ignore_idx)
@@ -97,7 +93,7 @@ def train():
     warmup_steps = 1000
     warmup_start_lr = 1e-5
     optim = Optimizer(
-            model = net,
+            model = net.module,
             lr0 = lr_start,
             momentum = momentum,
             wd = weight_decay,
@@ -107,11 +103,10 @@ def train():
             power = power)
 
     ## train loop
-    # msg_iter = 50
-    msg_iter = 2
+    msg_iter = 50
     loss_avg = []
     st = glob_st = time.time()
-    diter = iter(dl) 
+    diter = iter(dl)
     epoch = 0
     for it in range(max_iter):
         try:
@@ -120,11 +115,11 @@ def train():
                 raise StopIteration
         except StopIteration:
             epoch += 1
-            # sampler.set_epoch(epoch)
+            sampler.set_epoch(epoch)
             diter = iter(dl)
             im, lb = next(diter)
-        # im = im.cuda()
-        # lb = lb.cuda()
+        im = im.cuda()
+        lb = lb.cuda()
         H, W = im.size()[2:]
         lb = torch.squeeze(lb, 1)
 
@@ -164,23 +159,19 @@ def train():
             logger.info(msg)
             loss_avg = []
             st = ed
-        # if dist.get_rank() == 0:
-        #     if (it+1) % 5000 == 0:
-        #         state = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
-        #         if dist.get_rank() == 0:  # Mapae: 대체 왜 같은 조건을 두 번 비교하는 거지??
-        #             torch.save(state, './res/cp/{}_iter.pth'.format(it))
-        #         evaluate(dspth=R'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ\CelebA-HQ-img', cp='{}_iter.pth'.format(it))
-        if (it+1) % 5000 == 0:
-            state = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
-            torch.save(state, './res/cp/{}_iter.pth'.format(it))
+        if dist.get_rank() == 0:
+            if (it+1) % 5000 == 0:
+                state = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
+                if dist.get_rank() == 0:
+                    torch.save(state, './res/cp/{}_iter.pth'.format(it))
+                evaluate(dspth=R'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ\CelebA-HQ-img', cp='{}_iter.pth'.format(it))
 
     #  dump the final model
     save_pth = osp.join(respth, 'model_final_diss.pth')
     # net.cpu()
     state = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
-    # if dist.get_rank() == 0:
-    #     torch.save(state, save_pth)
-    torch.save(state, save_pth)
+    if dist.get_rank() == 0:
+        torch.save(state, save_pth)
     logger.info('training done, model saved to: {}'.format(save_pth))
 
 

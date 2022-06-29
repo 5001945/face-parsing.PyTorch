@@ -3,6 +3,7 @@
 
 from logger import setup_logger
 from model import BiSeNet
+from segmentation_models_pytorch import Unet, DeepLabV3Plus
 from face_dataset import FaceMask
 
 import torch
@@ -62,7 +63,9 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
         os.makedirs(respth)
 
     n_classes = 19
-    net = BiSeNet(n_classes=n_classes)
+    # net = BiSeNet(n_classes=n_classes)
+    # net = Unet(classes=n_classes)
+    net = DeepLabV3Plus(classes=n_classes)
     net.cuda()
     save_pth = osp.join('res/cp', cp)
     net.load_state_dict(torch.load(save_pth))

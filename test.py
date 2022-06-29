@@ -3,6 +3,7 @@
 
 from logger import setup_logger
 from model import BiSeNet
+from segmentation_models_pytorch import Unet, DeepLabV3Plus
 
 import torch
 
@@ -13,7 +14,13 @@ from PIL import Image
 import torchvision.transforms as transforms
 import cv2
 
-def vis_parsing_maps(im, parsing_anno, stride, save_im=False, save_path='vis_results/parsing_map_on_im.jpg'):
+def vis_parsing_maps(
+    im: Image.Image,
+    parsing_anno: np.ndarray,
+    stride: int,
+    save_im: bool = False,
+    save_path: str = 'vis_results/parsing_map_on_im.jpg'
+):
     # Colors for all 20 parts
     part_colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0],
                    [255, 0, 85], [255, 0, 170],
@@ -25,14 +32,15 @@ def vis_parsing_maps(im, parsing_anno, stride, save_im=False, save_path='vis_res
                    [255, 0, 255], [255, 85, 255], [255, 170, 255],
                    [0, 255, 255], [85, 255, 255], [170, 255, 255]]
 
-    im = np.array(im)
+    im: np.ndarray = np.array(im)
     vis_im = im.copy().astype(np.uint8)
     vis_parsing_anno = parsing_anno.copy().astype(np.uint8)
     vis_parsing_anno = cv2.resize(vis_parsing_anno, None, fx=stride, fy=stride, interpolation=cv2.INTER_NEAREST)
-    vis_parsing_anno_color = np.zeros((vis_parsing_anno.shape[0], vis_parsing_anno.shape[1], 3)) + 255
+    vis_parsing_anno_color = np.zeros((vis_parsing_anno.shape[0], vis_parsing_anno.shape[1], 3)) + 255  # All white
 
     num_of_class = np.max(vis_parsing_anno)
 
+    # 각각의 클래스(skin, l_brow, ..., hat)를 돌면서 해당 mask된 부분을 해당 색깔로 색칠
     for pi in range(1, num_of_class + 1):
         index = np.where(vis_parsing_anno == pi)
         vis_parsing_anno_color[index[0], index[1], :] = part_colors[pi]
@@ -54,7 +62,9 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
         os.makedirs(respth)
 
     n_classes = 19
-    net = BiSeNet(n_classes=n_classes)
+    # net = BiSeNet(n_classes=n_classes)
+    # net = Unet(classes=n_classes)
+    net = DeepLabV3Plus(classes=n_classes)
     net.cuda()
     save_pth = osp.join('res/cp', cp)
     net.load_state_dict(torch.load(save_pth))
@@ -71,8 +81,8 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
             img = to_tensor(image)
             img = torch.unsqueeze(img, 0)
             img = img.cuda()
-            out = net(img)[0]
-            parsing = out.squeeze(0).cpu().numpy().argmax(0)
+            out: torch.Tensor = net(img)[0]
+            parsing: np.ndarray = out.squeeze(0).cpu().numpy().argmax(0)
             # print(parsing)
             print(np.unique(parsing))
 
@@ -85,6 +95,4 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
 
 
 if __name__ == "__main__":
-    evaluate(dspth='/home/zll/data/CelebAMask-HQ/test-img', cp='79999_iter.pth')
-
-
+    evaluate(dspth=R'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ\CelebA-HQ-img', cp='79999_iter.pth')

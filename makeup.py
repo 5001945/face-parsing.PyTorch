@@ -89,7 +89,7 @@ if __name__ == '__main__':
         'upper_lip': 12,
         'lower_lip': 13
     }
-    image_path = '/home/zll/data/CelebAMask-HQ/test-img/{}.jpg'.format(num)
+    image_path = Rf'D:\PyProject\CelebAMask-HQ\CelebAMask-HQ\CelebA-HQ-img\{num}.jpg'
     parsing_path = 'res/test_res/{}.png'.format(num)
 
     image = cv2.imread(image_path)
