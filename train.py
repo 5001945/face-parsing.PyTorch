@@ -107,8 +107,7 @@ def train():
             power = power)
 
     ## train loop
-    # msg_iter = 50
-    msg_iter = 2
+    msg_iter = 50
     loss_avg = []
     st = glob_st = time.time()
     diter = iter(dl) 
@@ -129,11 +128,15 @@ def train():
         lb = torch.squeeze(lb, 1)
 
         optim.zero_grad()
-        out, out16, out32 = net(im)
-        lossp = LossP(out, lb)
-        loss2 = Loss2(out16, lb)
-        loss3 = Loss3(out32, lb)
-        loss = lossp + loss2 + loss3
+        fwd = net(im)
+        if type(fwd) is tuple and len(fwd) == 3:
+            out, out16, out32 = fwd
+            lossp = LossP(out, lb)
+            loss2 = Loss2(out16, lb)
+            loss3 = Loss3(out32, lb)
+            loss = lossp + loss2 + loss3
+        else:
+            loss = LossP(fwd, lb)
         loss.backward()
         optim.step()
 
